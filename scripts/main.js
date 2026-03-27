@@ -530,7 +530,16 @@ function fallbackExpiryFromNow() {
   return formatExpiry(date.toISOString());
 }
 
-const normalizeResponse = (payload) => {
+const buildBetaAutoLoginUrl = ({ email = "", testerId = "", rawExpiry = "", licenseStatus = "active" } = {}) => {
+  const url = new URL(CONFIG.betaFallbackUrl);
+  if (email) url.searchParams.set("email", String(email).trim().toLowerCase());
+  if (testerId) url.searchParams.set("tester_id", String(testerId).trim());
+  if (rawExpiry) url.searchParams.set("expires_at", String(rawExpiry).trim());
+  if (licenseStatus) url.searchParams.set("license_status", String(licenseStatus).trim());
+  return url.toString();
+};
+
+const normalizeResponse = (payload, requestPayload = {}) => {
   const testerId =
     payload.testerId || payload.tester_id || payload.licenseKey || payload.license_key || "-";
 
@@ -539,9 +548,14 @@ const normalizeResponse = (payload) => {
     ? fallbackExpiryFromNow()
     : formatExpiry(rawExpiry);
 
-  const appUrl = "https://beta.kedrix.tech/";
+  const appUrl = buildBetaAutoLoginUrl({
+    email: payload.email || requestPayload.email || "",
+    testerId,
+    rawExpiry,
+    licenseStatus: payload.status || payload.license_status || "active",
+  });
 
-  return { testerId, expiry, appUrl };
+  return { testerId, expiry, appUrl, rawExpiry };
 };
 
 const postToBackend = async (body) => {
@@ -583,17 +597,20 @@ betaForm?.addEventListener("submit", async (event) => {
     setStatus(t.statusSubmitting, "");
 
     const raw = await postToBackend(payload);
-    const normalized = normalizeResponse(raw);
+    const normalized = normalizeResponse(raw, payload);
 
     testerIdNode.textContent = normalized.testerId;
     expiryDateNode.textContent = normalized.expiry || t.pendingExpiryLabel;
     openBetaButton.href = normalized.appUrl;
-    openBetaButton.target = "_blank";
+    openBetaButton.target = "_self";
     openBetaButton.rel = "noopener noreferrer";
     successPanel.hidden = false;
-    setStatus(t.statusSuccess, "success");
+    setStatus(`${t.statusSuccess} Reindirizzamento alla beta...`, "success");
 
     successPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => {
+      window.location.assign(normalized.appUrl);
+    }, 350);
   } catch (error) {
     console.error(error);
     setStatus(t.statusError, "error");
